@@ -10,13 +10,14 @@ This project demonstrates how [Protocol-Embedded Compliance (PEC)](https://usepe
 |-------|-----------|----------|
 | **Protocol** | PEC | MCP servers declare compliance metadata |
 | **Deployment** | Policy Cards | Defines what agents CAN/CANNOT do |
+| **Runtime** | Mastra + OpenAI | Real AI agent with tool calling |
 
 **PEC** standardises compliance *information* at the protocol layer.
 **Policy Cards** provides governance *logic* at the deployment layer.
 
-This example shows the **Declare-Do-Audit** workflow:
+This example shows the **Declare-Do-Audit** workflow with a **real MCP server** and **real AI agent**:
 1. **Declare**: Load and validate policy card
-2. **Do**: Evaluate tools against policy card rules
+2. **Do**: Filter MCP tools by policy card rules, agent calls compliant tools
 3. **Audit**: Generate compliance report with evidence hashes
 
 ## Directory Structure
@@ -26,14 +27,21 @@ pec-policy-cards-example/
 ├── AGENTS.md                           # This file
 ├── README.md                           # User documentation
 ├── package.json
+├── pnpm-workspace.yaml                 # Monorepo workspace config
 ├── tsconfig.json
 ├── policy-cards/                       # Example policy cards (YAML)
 │   ├── retail-banking.yaml            # EU financial services
 │   └── clinical-sandbox.yaml          # US healthcare sandbox
+├── mcp-server/                         # Real MCP server
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── index.ts                   # MCP server entry point
+│       └── tools.ts                   # Tool definitions with PEC metadata
 ├── src/
 │   ├── index.ts                       # Main demo entry point
-│   └── mock-servers.ts                # Mock MCP servers with PEC metadata
-└── audit-report-*.json                # Generated audit reports
+│   └── agent.ts                       # Governed agent creation
+└── audit-report-*.json                # Generated audit reports (gitignored)
 ```
 
 ## Running the Demo
@@ -46,7 +54,7 @@ pnpm install
 pnpm start
 ```
 
-**Output:** Evaluates 6 mock MCP servers against two policy cards (Retail Banking, Clinical Sandbox), showing rule violations, warnings, and KPI results.
+**Output:** Connects to a real MCP server, discovers 4 tools with PEC metadata, evaluates them against two policy cards (Retail Banking, Clinical Sandbox), and runs a real OpenAI agent that can only call compliant tools.
 
 ## Standards
 - Never use `any`
@@ -57,9 +65,11 @@ pnpm start
 
 | Package | Purpose |
 |---------|---------|
-| `@protocol-embedded-compliance/mastra` | PEC types and filtering |
+| `@ai-sdk/openai` | OpenAI model provider for AI SDK |
+| `ai` | Vercel AI SDK for agent generation |
+| `@protocol-embedded-compliance/mastra` | PEC types and MCP client |
 | `@protocol-embedded-compliance/policy-cards` | Policy Card loader, evaluator, auditor |
-| `@mastra/core`, `@mastra/mcp` | Mastra framework (for tool types) |
+| `@mastra/core`, `@mastra/mcp` | Mastra framework (agent, tools, MCP) |
 
 ## Policy Card Structure
 
@@ -106,20 +116,40 @@ assurance_mapping:
   eu_ai_act: ["EUAA-AnnexIV-3", "EUAA-Art72"]
 ```
 
-## Mock Servers
+## MCP Server Tools
 
-The demo includes 6 mock MCP servers with PEC metadata:
+The MCP server exposes 4 tools with PEC metadata:
 
-| Server | Vendor | Location | Certifications |
-|--------|--------|----------|----------------|
-| acme_translate | Acme (Dublin) | IE, FR | ISO_27001, SOC2_TYPE_II |
-| globalpay_fraud_check | GlobalPay (SF) | US, SG | PCI_DSS, SOC2_TYPE_II |
-| swissvault_store | SwissVault (Zurich) | CH | ISO_27001, SOC2_TYPE_II |
-| tokyoai_ocr | Tokyo AI Labs | JP | ISO_27001 |
-| beijingcloud_compute | Beijing Cloud | CN | None |
-| medixus_analyse | MedixUS (Boston) | US | HIPAA, SOC2_TYPE_II, HITRUST |
+| Tool | Location | Risk | Certifications |
+|------|----------|------|----------------|
+| eu_payment_processor | DE, IE | limited | ISO_27001, SOC2_TYPE_II, PCI_DSS |
+| document_scanner | NL, FR | minimal | ISO_27001 |
+| clinical_analyser | US | high | HIPAA, SOC2_TYPE_II, HITRUST |
+| offshore_compute | CN | limited | None |
 
 ## Key Code Patterns
+
+### Connecting to MCP Server
+
+```typescript
+import { connectToMcpServer } from './agent'
+
+const mcpConnection = await connectToMcpServer('./mcp-server/src/index.ts')
+// mcpConnection.tools contains discovered tools with PEC metadata
+```
+
+### Creating a Governed Agent
+
+```typescript
+import { createGovernedAgent } from './agent'
+
+const { agent, compliantTools, rejectedTools } = await createGovernedAgent({
+  policyCardPath: './policy-cards/retail-banking.yaml',
+  model: 'gpt-4o-mini',
+  mcpConnection
+})
+// agent only has access to compliantTools
+```
 
 ### Loading a Policy Card
 
@@ -156,20 +186,50 @@ const report = auditor.generateReport()
 ## Example Output
 
 ```
-[DECLARE PHASE] Loading policy card...
+══════════════════════════════════════════════════════════════════════
+  Connecting to Real MCP Server
+══════════════════════════════════════════════════════════════════════
+
+  ✓ Connected to MCP server
+  ✓ Discovered 4 tools with PEC metadata
+
+    • eu_payment_processor
+      Locations: DE, IE
+      Risk: limited
+
+══════════════════════════════════════════════════════════════════════
+  Retail Banking - Agent Demo
+══════════════════════════════════════════════════════════════════════
+
+[DECLARE PHASE] Loading policy card and creating governed agent...
+
   ✓ Policy card loaded: Retail Banking Payments Agent
-  Rules: 6
-  Assurance Mapping: NIST AI RMF, ISO 42001, EU AI Act
+  ✓ Agent created with 2 compliant tools
+  ✗ 2 tools rejected by policy card
 
-[DO PHASE] Evaluating tools...
-  ✓ acme_translate: COMPLIANT
-  ✗ globalpay_fraud_check: REJECTED
-    → [geo-restriction] Tool processes data outside approved jurisdictions
-    → [conformity-required] Tool has not undergone EU AI Act conformity assessment
+  Compliant tools:
+    ✓ eu_payment_processor (DE, IE)
+    ✓ document_scanner (NL, FR)
 
-[AUDIT PHASE] Generating report...
+  Rejected tools:
+    ✗ clinical_analyser
+      → Tool processes data outside approved jurisdictions
+    ✗ offshore_compute
+      → Tool lacks valid GDPR Chapter V transfer mechanism
+
+[DO PHASE] Running agent with user prompt...
+
+  User: Please process a payment of 500 EUR to IBAN DE89370400440532013000
+
+  Agent: Processing your payment...
+
+  Tools called:
+    → eu_payment_processor({"amount":500,"recipient_iban":"DE89..."})
+
+[AUDIT PHASE] Generating compliance report...
+
   Compliance rate: 50.0% (target: 100.0%) [CRITICAL]
-  Evidence hash: sha256:6fafb61fc61a24580...
+  Evidence hash: sha256:6fbe513545ae3fcce...
 ```
 
 ## Code Style
@@ -182,13 +242,14 @@ const report = auditor.generateReport()
 
 1. Create YAML file in `policy-cards/` directory
 2. Follow schema: `policy_card_version`, `name`, `scope`, `rules` (required)
-3. Add call to `runPolicyCardDemo()` in `src/index.ts`
+3. Add call to `runAgentDemo()` in `src/index.ts`
 
-## Adding New Mock Servers
+## Adding New MCP Tools
 
-1. Define `PecComplianceMetadata` object in `src/mock-servers.ts`
-2. Add to `allMockTools` array
-3. Run demo to see filtering results
+1. Define `PecComplianceMetadata` object in `mcp-server/src/tools.ts`
+2. Create Mastra tool with PEC metadata in description
+3. Add to `mastraTools` map in `mcp-server/src/index.ts`
+4. Run demo to see filtering results
 
 ## Audit Report Schema
 
@@ -227,7 +288,7 @@ interface AuditReport {
 
 - [Policy Cards Paper](https://arxiv.org/html/2510.24383v1) — Mavračić (2025)
 - [Protocol-Embedded Compliance](https://usepec.eu) — Jones (2026)
-- [pec-example](../pec-example) — PEC-only demo
+- [pec-example](../pec-example) — PEC-only demo (no Policy Cards)
 - [NIST AI RMF](https://www.nist.gov/itl/ai-risk-management-framework)
 - [ISO/IEC 42001](https://www.iso.org/standard/42001)
 - [EU AI Act](https://eur-lex.europa.eu/eli/reg/2024/1689)
