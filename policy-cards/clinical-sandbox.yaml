@@ -1,0 +1,188 @@
+# Policy Card for Clinical Triage Sandbox
+# Based on Policy Cards framework (arxiv:2510.24383)
+
+policy_card_version: "0.1"
+name: "Clinical Triage Sandbox"
+description: |
+  Runtime governance policy for AI agents in clinical triage sandbox environment.
+  More permissive than production but still enforces core safety constraints.
+
+scope:
+  ai_act_risk_level: high
+  intended_uses:
+    - clinical_triage
+    - symptom_assessment
+    - appointment_routing
+  prohibited_uses:
+    - diagnosis
+    - treatment_recommendation
+    - prescription
+  geography:
+    - US
+  sectors:
+    - healthcare
+  data_categories:
+    - health_data
+    - phi
+
+rules:
+  - id: us-processing-required
+    description: "Healthcare data must remain in US for HIPAA compliance"
+    effect: deny
+    condition:
+      field: pec.processing_locations
+      operator: not_any_of
+      values: ["US"]
+    reason: "Tool does not process data in US (HIPAA requirement)"
+    assurance_mapping:
+      nist: ["MAP-1", "GOVERN-1"]
+
+  - id: prohibited-jurisdiction
+    description: "Block processing in high-risk jurisdictions"
+    effect: deny
+    condition:
+      field: pec.processing_locations
+      operator: any_of
+      values: ["CN", "RU", "IR", "KP"]
+    reason: "Tool processes data in prohibited jurisdiction"
+
+  - id: hipaa-certification
+    description: "Require HIPAA certification for PHI processing"
+    effect: deny
+    condition:
+      field: pec.certifications
+      operator: not_any_of
+      values: ["HIPAA_COMPLIANT", "HITRUST", "SOC2_TYPE_II"]
+    reason: "Tool lacks required healthcare certification (HIPAA/HITRUST/SOC2)"
+    assurance_mapping:
+      iso_42001: ["ISO42001-8"]
+
+  - id: suitable-for-healthcare
+    description: "Tool must be suitable for healthcare use"
+    effect: deny
+    condition:
+      field: pec.suitable_for
+      operator: not_any_of
+      values: ["healthcare", "healthcare_analysis", "medical_records", "clinical_research"]
+    reason: "Tool not suitable for healthcare applications"
+
+  - id: unsuitable-gdpr
+    description: "Block tools explicitly unsuitable for healthcare with EU data"
+    effect: deny
+    condition:
+      field: pec.unsuitable_for
+      operator: contains
+      value: "gdpr_scope"
+    reason: "Tool explicitly unsuitable for GDPR-scope data (may have EU patients)"
+
+  - id: special-categories-allowed
+    description: "Allow tools that process special category data (required for healthcare)"
+    effect: allow
+    condition:
+      field: pec.gdpr.special_categories_processed
+      operator: equals
+      value: true
+    reason: "Tool processes special category data (expected for healthcare)"
+
+  - id: conformity-warning
+    description: "Warn if tool lacks conformity assessment (sandbox allows)"
+    effect: warn
+    condition:
+      field: pec.ai_act_status.conformity_assessed
+      operator: equals
+      value: false
+    reason: "Tool has not undergone conformity assessment (acceptable in sandbox)"
+
+escalation:
+  default_action: log_and_continue
+  triggers:
+    - id: emergency-symptoms
+      condition: "symptom_severity == critical"
+      action: human_approval_required
+      timeout_seconds: 60
+      fallback_action: block_and_log
+    - id: high-risk-patient
+      condition: "patient_risk_score > 0.8"
+      action: queue_for_review
+  human_oversight:
+    required_for:
+      - emergency_triage
+      - medication_interaction_check
+    timeout_seconds: 120
+    fallback: alert
+
+monitoring:
+  enabled: true
+  detectors:
+    - name: safety_critical_rejection
+      description: "Alert on any safety-critical tool rejection"
+      threshold: 0
+      action: alert
+    - name: latency_p99
+      description: "Healthcare requires fast response"
+      threshold_ms: 200
+      action: warn
+  logging:
+    level: comprehensive
+    retention_days: 2555
+    include_pec_metadata: true
+  review:
+    cadence: daily
+    required_approvers: 1
+
+kpis_thresholds:
+  thresholds:
+    - metric: compliance_rate
+      description: "Allow lower compliance in sandbox"
+      target: 0.95
+      warning_threshold: 0.90
+      critical_threshold: 0.85
+    - metric: warning_rate
+      description: "Track warnings for production readiness"
+      target: 0.1
+      warning_threshold: 0.2
+      critical_threshold: 0.3
+  critical_auto_fail:
+    - "processing_in_prohibited_jurisdiction"
+    - "no_hipaa_certification"
+  reporting:
+    frequency: real_time
+    include_in_audit: true
+
+obligations:
+  regulatory:
+    - "HIPAA Privacy Rule"
+    - "HIPAA Security Rule"
+    - "21 CFR Part 11 (if applicable)"
+  contractual:
+    - "Business Associate Agreements"
+    - "Sandbox usage terms"
+  internal:
+    - "Clinical AI sandbox policy"
+    - "IRB approval for research use"
+
+assurance_mapping:
+  nist:
+    - GOVERN-1
+    - MAP-1
+    - MAP-2
+    - MEASURE-1
+    - MANAGE-1
+  iso_42001:
+    - ISO42001-4
+    - ISO42001-8
+    - ISO42001-9
+  eu_ai_act:
+    - EUAA-Art53
+    - EUAA-AnnexIV-4
+
+change_management:
+  version: "1.0.0"
+  last_updated: "2026-01-12T00:00:00Z"
+  approved_by: "Chief Medical Information Officer"
+  next_review: "2026-02-12T00:00:00Z"
+  change_log:
+    - version: "1.0.0"
+      date: "2026-01-12"
+      description: "Initial policy card for clinical triage sandbox"
+      author: "Lloyd Jones"

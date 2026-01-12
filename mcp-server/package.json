@@ -1,0 +1,20 @@
+{
+  "name": "pec-policy-cards-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server with PEC compliance metadata for Policy Cards example",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@mastra/core": "^0.24.9",
+    "@mastra/mcp": "^0.14.5",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.6",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

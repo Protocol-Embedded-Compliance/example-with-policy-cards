@@ -1,0 +1,28 @@
+{
+  "name": "pec-policy-cards-example",
+  "version": "1.0.0",
+  "description": "Example demonstrating PEC + Policy Cards integration for AI agent governance",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "tsc"
+  },
+  "keywords": ["pec", "policy-cards", "ai-governance", "mastra", "eu-ai-act"],
+  "author": "Lloyd Jones",
+  "license": "MIT",
+  "dependencies": {
+    "@ai-sdk/openai": "^2.0.68",
+    "@mastra/core": "^0.24.9",
+    "@mastra/mcp": "^0.14.5",
+    "@protocol-embedded-compliance/mastra": "^0.1.0",
+    "@protocol-embedded-compliance/policy-cards": "^0.1.0",
+    "ai": "^5.0.0",
+    "zod": "^3.25.0",
+    "dotenv": "^17.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.6",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

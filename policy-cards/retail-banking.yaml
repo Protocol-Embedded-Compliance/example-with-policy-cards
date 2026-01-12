@@ -1,0 +1,224 @@
+# Policy Card for Retail Banking Payments Agent
+# Based on Policy Cards framework (arxiv:2510.24383)
+
+policy_card_version: "0.1"
+name: "Retail Banking Payments Agent"
+description: |
+  Runtime governance policy for AI agents handling payment initiation,
+  balance inquiries, and financial analytics in EU retail banking context.
+
+scope:
+  ai_act_risk_level: high
+  intended_uses:
+    - payment_initiation
+    - balance_inquiry
+    - fraud_detection
+    - financial_analytics
+  prohibited_uses:
+    - credit_scoring
+    - automated_loan_decisions
+  geography:
+    - EU
+    - EEA
+  sectors:
+    - retail_banking
+    - payment_services
+  data_categories:
+    - financial_data
+    - transaction_data
+
+rules:
+  - id: geo-restriction
+    description: "Ensure all processing occurs in approved jurisdictions"
+    effect: deny
+    condition:
+      field: pec.processing_locations
+      operator: not_any_of
+      values: ["EU", "EEA", "ADEQUACY", "DE", "FR", "IE", "NL", "BE", "AT", "ES", "IT", "PT", "CH", "GB", "JP"]
+    reason: "Tool processes data outside approved jurisdictions (EU adequacy required)"
+    assurance_mapping:
+      eu_ai_act: ["EUAA-AnnexIV-3"]
+      nist: ["MAP-1"]
+
+  - id: risk-ceiling
+    description: "Reject tools with risk classification exceeding deployment threshold"
+    effect: deny
+    condition:
+      field: pec.ai_act_status.classification
+      operator: risk_exceeds
+      threshold: limited
+    reason: "Tool AI Act risk classification exceeds maximum permitted (limited)"
+    assurance_mapping:
+      eu_ai_act: ["EUAA-Art6"]
+      nist: ["GOVERN-1"]
+
+  - id: conformity-required
+    description: "Require conformity assessment for regulated tools"
+    effect: deny
+    condition:
+      field: pec.ai_act_status.conformity_assessed
+      operator: equals
+      value: false
+    reason: "Tool has not undergone EU AI Act conformity assessment"
+    assurance_mapping:
+      eu_ai_act: ["EUAA-AnnexIV-4"]
+      iso_42001: ["ISO42001-9"]
+
+  - id: gdpr-transfer-mechanism
+    description: "Require valid GDPR transfer mechanism"
+    effect: deny
+    condition:
+      field: pec.gdpr.transfer_mechanisms
+      operator: not_any_of
+      values: ["ADEQUACY", "SCCS_2021", "BCR"]
+    reason: "Tool lacks valid GDPR Chapter V transfer mechanism"
+    assurance_mapping:
+      eu_ai_act: ["EUAA-Art72"]
+
+  - id: financial-sector-prohibition
+    description: "Block tools unsuitable for financial services"
+    effect: deny
+    condition:
+      field: pec.unsuitable_for
+      operator: contains
+      value: "financial_trading"
+    reason: "Tool explicitly unsuitable for financial services"
+
+  - id: certification-requirement
+    description: "Require security certification for financial data"
+    effect: warn
+    condition:
+      field: pec.certifications
+      operator: not_any_of
+      values: ["ISO_27001", "SOC2_TYPE_II", "PCI_DSS"]
+    reason: "Tool lacks recommended security certification for financial services"
+    assurance_mapping:
+      iso_42001: ["ISO42001-8"]
+
+escalation:
+  default_action: block_and_log
+  triggers:
+    - id: high-value-transaction
+      condition: "transaction_value > 10000"
+      action: human_approval_required
+      timeout_seconds: 300
+      fallback_action: block_and_log
+    - id: new-payee
+      condition: "payee_first_transaction == true"
+      action: queue_for_review
+    - id: cross-border
+      condition: "destination_country != source_country"
+      action: log_and_continue
+  human_oversight:
+    required_for:
+      - payment_initiation_above_threshold
+      - new_beneficiary_setup
+    timeout_seconds: 600
+    fallback: block_and_log
+
+monitoring:
+  enabled: true
+  detectors:
+    - name: tool_rejection_rate
+      description: "Alert if too many tools are being rejected"
+      threshold: 0.3
+      action: alert
+      window_seconds: 3600
+    - name: latency_p99
+      description: "Warn if compliance checks are slow"
+      threshold_ms: 500
+      action: warn
+    - name: escalation_rate
+      description: "Alert if escalation rate is high"
+      threshold: 0.1
+      action: alert
+  logging:
+    level: comprehensive
+    retention_days: 2555
+    include_pec_metadata: true
+  review:
+    cadence: weekly
+    required_approvers: 2
+
+kpis_thresholds:
+  thresholds:
+    - metric: compliance_rate
+      description: "Percentage of tool invocations that pass all rules"
+      target: 1.0
+      warning_threshold: 0.98
+      critical_threshold: 0.95
+    - metric: rejection_rate
+      description: "Percentage of tools rejected by policy"
+      target: 0.0
+      warning_threshold: 0.1
+      critical_threshold: 0.2
+    - metric: escalation_rate
+      description: "Percentage of invocations requiring escalation"
+      target: 0.05
+      warning_threshold: 0.1
+      critical_threshold: 0.15
+  critical_auto_fail:
+    - "processing_in_prohibited_jurisdiction"
+    - "unassessed_high_risk_tool"
+  reporting:
+    frequency: daily
+    include_in_audit: true
+
+obligations:
+  regulatory:
+    - "EU AI Act Article 6 (High-risk classification)"
+    - "GDPR Chapter V (International transfers)"
+    - "PSD2 Article 97 (Strong customer authentication)"
+  contractual:
+    - "Data Processing Agreement with tool providers"
+    - "Service Level Agreements on availability"
+  internal:
+    - "Information Security Policy compliance"
+    - "Third-party risk management procedures"
+
+assurance_mapping:
+  nist:
+    - GOVERN-1
+    - GOVERN-2
+    - MAP-1
+    - MAP-2
+    - MEASURE-1
+    - MEASURE-2
+    - MANAGE-1
+    - MANAGE-2
+  iso_42001:
+    - ISO42001-4
+    - ISO42001-5
+    - ISO42001-6
+    - ISO42001-8
+    - ISO42001-9
+    - ISO42001-10
+  eu_ai_act:
+    - EUAA-Art6
+    - EUAA-Art14
+    - EUAA-Art72
+    - EUAA-AnnexIV-3
+    - EUAA-AnnexIV-4
+    - EUAA-AnnexIV-9
+
+change_management:
+  version: "1.0.0"
+  last_updated: "2026-01-12T00:00:00Z"
+  approved_by: "Chief Compliance Officer"
+  next_review: "2026-04-12T00:00:00Z"
+  change_log:
+    - version: "1.0.0"
+      date: "2026-01-12"
+      description: "Initial policy card for retail banking payments agent"
+      author: "Lloyd Jones"
+
+references:
+  - type: regulation
+    uri: "https://eur-lex.europa.eu/eli/reg/2024/1689"
+    description: "EU AI Act"
+  - type: framework
+    uri: "https://arxiv.org/html/2510.24383v1"
+    description: "Policy Cards specification"
+  - type: standard
+    uri: "https://usepec.eu"
+    description: "Protocol-Embedded Compliance"
